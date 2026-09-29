@@ -202,6 +202,8 @@ void EngineController::run(HWND window,std::wstring path,PlayerOptions options,s
     {std::lock_guard lock(mutex_);activeRemote_=remote;}
 #else
     (void)remoteRequest;const bool isRemote=false;
+    // Keeps the explicit step-lambda capture list valid in a build without Remote Play.
+    std::nullptr_t remote=nullptr;
 #endif
     const bool isCapture=physicalCapture||options.captureReplayForTest||isRemote||isScreen;
     // File replay has no hardware arrival clock; retain its continuous PTS anchor.
