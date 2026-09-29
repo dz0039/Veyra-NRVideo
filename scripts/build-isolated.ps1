@@ -6,7 +6,13 @@ param(
     [Parameter(Mandatory)][string]$TempDirectory,
     [string[]]$Targets=@('veyra'),
     [string]$DisplayVersion,
-    [switch]$ConfigureOnly
+    [switch]$ConfigureOnly,
+    # Reduced local build without the pinned Chiaki dependency chain; releases keep Remote Play ON.
+    [switch]$NoRemotePlay,
+    # Extra -D options, e.g. -DVEYRA_ENABLE_D3D12_DEBUG=OFF; cached like any other configure value.
+    [string[]]$ExtraCMakeArgs=@(),
+    # Pins the MSVC toolset (vcvars -vcvars_ver) when a stale v143 default selects an older one.
+    [string]$VcvarsVersion
 )
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
@@ -27,12 +33,13 @@ try {
     & cmd.exe /d /c 'chcp 65001 >nul'
     if($LASTEXITCODE){throw 'Cannot set build console encoding'}
     $env:VSLANG='1033'
-    $vcEnvironment=& cmd.exe /d /c "call `"$vcvars`" >nul && set"
+    $vcvarsArgs=if($VcvarsVersion){" -vcvars_ver=$VcvarsVersion"}else{''}
+    $vcEnvironment=& cmd.exe /d /c "call `"$vcvars`"$vcvarsArgs >nul && set"
     if($LASTEXITCODE){throw 'vcvars failed'}
     foreach($line in $vcEnvironment){if($line -match '^([^=]+)=(.*)$'){[Environment]::SetEnvironmentVariable($matches[1],$matches[2],'Process')}}
     $cmake=Join-Path $vs 'Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe'
     $ninja=Join-Path $vs 'Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe'
-    $argsList=@('-S',$Root,'-B',$BuildDirectory,'-G','Ninja','-DCMAKE_BUILD_TYPE=Release',"-DCMAKE_MAKE_PROGRAM=$ninja",'-DVEYRA_ENABLE_EXPERIMENTAL_DLSSNR=ON','-DVEYRA_ENABLE_REMOTEPLAY=ON')
+    $argsList=@('-S',$Root,'-B',$BuildDirectory,'-G','Ninja','-DCMAKE_BUILD_TYPE=Release',"-DCMAKE_MAKE_PROGRAM=$ninja",'-DVEYRA_ENABLE_EXPERIMENTAL_DLSSNR=ON',"-DVEYRA_ENABLE_REMOTEPLAY=$(if($NoRemotePlay){'OFF'}else{'ON'})")
     $refreshDependencies=$false
     $rulesPath=Join-Path $BuildDirectory 'CMakeFiles/rules.ninja'
     $encodingMarker=Join-Path $BuildDirectory 'veyra-utf8-dependencies-v1.txt'
@@ -41,6 +48,7 @@ try {
         Write-Host 'Refreshing MSVC dependency metadata and removing old objects.'
     }
     if($DisplayVersion){$argsList+="-DVEYRA_DISPLAY_VERSION=$DisplayVersion"}
+    $argsList+=$ExtraCMakeArgs
     foreach($line in $cache){
         if($line -match '^(VEYRA_[A-Z0-9_]+_ROOT|VEYRA_RP_CHIAKI_SOURCE_DIR|VEYRA_RP_CHIAKI_VERIFY_DIR|CMAKE_PREFIX_PATH|PROTOC|Protobuf_PROTOC_EXECUTABLE|PKG_CONFIG_EXECUTABLE):[^=]+=(.+)$'){
             $argsList+="-D$($matches[1])=$($matches[2])"
